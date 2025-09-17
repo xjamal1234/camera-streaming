@@ -9,7 +9,7 @@ abstract class StreamWsState {
   final bool readyForCapture;
   
   const StreamWsState({
-    this.targetFps = 6,
+    this.targetFps = 20,
     this.guidanceDirection,
     this.guidanceMagnitude = 0.0,
     this.coverage = 0.0,

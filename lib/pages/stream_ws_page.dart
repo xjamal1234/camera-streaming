@@ -73,12 +73,12 @@ class _StreamWsPageState extends State<StreamWsPage> {
   double _currentFps = 0.0;
   
   // Adaptive quality for network conditions
-  int jpegQuality = 75;
-  int _adaptiveQuality = 75;
+  int jpegQuality = 80;
+  int _adaptiveQuality = 80;
   bool _networkSlow = false;
   
   // Server configuration
-  String serverUrl = 'ws://10.7.0.250:8080/ws/guidance';
+  String serverUrl = 'wss://bae61170b508.ngrok-free.app/ws/guidance';
   
   // Frame tracking
   int _frameCounter = 0;
@@ -416,8 +416,8 @@ class _StreamWsPageState extends State<StreamWsPage> {
       final type = m['type'];
 
       if (type == 'guidance') {
-        // Parse NOOR guidance response
-        final direction = m['dir'] as String? ?? 'steady';
+        // Parse NOOR guidance response with class-based system
+        final direction = m['class'] as String? ?? 'class_7'; // Default to no document
         final magnitude = (m['magnitude'] ?? 0.0).toDouble();
         final coverage = (m['coverage'] ?? 0.0).toDouble();
         final confidence = (m['conf'] ?? 0.0).toDouble();
@@ -541,24 +541,38 @@ class _StreamWsPageState extends State<StreamWsPage> {
   // Helper methods for guidance display
   IconData _getDirectionIcon(String? direction) {
     switch (direction) {
-      case 'up':
-        return Icons.keyboard_arrow_up;
-      case 'down':
-        return Icons.keyboard_arrow_down;
-      case 'left':
-        return Icons.keyboard_arrow_left;
-      case 'right':
-        return Icons.keyboard_arrow_right;
-      case 'steady':
-        return Icons.center_focus_strong;
+      case 'class_0':
+        return Icons.north_west;  // top-left corner
+      case 'class_1':
+        return Icons.north_east; // top-right corner
+      case 'class_2':
+        return Icons.south_west; // bottom-left corner
+      case 'class_3':
+        return Icons.south_east; // bottom-right corner
+      case 'class_4':
+        return Icons.center_focus_strong; // partial framing
+      case 'class_5':
+        return Icons.check_circle; // perfect framing
+      case 'class_6':
+        return Icons.keyboard_arrow_up; // center-edges
+      case 'class_7':
+        return Icons.help_outline; // no document detected
       default:
-        return Icons.center_focus_strong; // fallback
+        return Icons.center_focus_strong;
     }
   }
 
   Color _getDirectionColor(String? direction) {
-    if (direction == 'steady') return Colors.green;
-    return Colors.orange; // for up/down/left/right
+    switch (direction) {
+      case 'class_5':
+        return Colors.green; // perfect framing
+      case 'class_4':
+        return Colors.blue; // partial framing
+      case 'class_7':
+        return Colors.red; // no document
+      default:
+        return Colors.orange; // corner cases
+    }
   }
   
   void _showImageModal(SentFrame? sentFrame, ReceivedResult? receivedResult) {
@@ -657,9 +671,44 @@ class _StreamWsPageState extends State<StreamWsPage> {
             body: _cam?.value.isInitialized == true
                 ? Column(
                     children: [
-                      // Live camera preview
+                      // Live camera preview with direction overlay
                       Expanded(
-                        child: _cam != null ? CameraPreview(_cam!) : const SizedBox(),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Camera preview - ensure it fills the entire space
+                            _cam != null 
+                              ? SizedBox.expand(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    child: SizedBox(
+                                      width: _cam!.value.previewSize?.height ?? 0,
+                                      height: _cam!.value.previewSize?.width ?? 0,
+                                      child: CameraPreview(_cam!),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(),
+                            // Class ID overlay
+                            Center(
+                              child: Text(
+                                state.guidanceDirection ?? 'class_7',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getDirectionColor(state.guidanceDirection),
+                                  shadows: [
+                                    Shadow(
+                                      offset: Offset(1, 1),
+                                      blurRadius: 3,
+                                      color: Colors.black.withOpacity(0.8),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       
                       // Stats panel
@@ -679,17 +728,14 @@ class _StreamWsPageState extends State<StreamWsPage> {
                               ),
                               child: Column(
                                 children: [
-                                  // Direction arrow
-                                  Icon(
-                                    _getDirectionIcon(state.guidanceDirection),
-                                    size: 48,
-                                    color: _getDirectionColor(state.guidanceDirection),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Direction text
+                                  // Class ID text
                                   Text(
-                                    'Direction: ${state.guidanceDirection?.toUpperCase() ?? 'STEADY'}',
-                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                    'Class: ${state.guidanceDirection ?? 'class_7'}',
+                                    style: TextStyle(
+                                      fontSize: 18, 
+                                      fontWeight: FontWeight.bold,
+                                      color: _getDirectionColor(state.guidanceDirection),
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   // Metrics row
@@ -773,50 +819,73 @@ class _StreamWsPageState extends State<StreamWsPage> {
                             
                             const SizedBox(height: 12),
                             
-                            // Target FPS slider
+                            // Fixed settings display
                             Row(
                               children: [
                                 const Text('Target FPS: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Expanded(
-                                  child: Slider(
-                                    value: state.targetFps.toDouble(),
-                                    min: 1, max: 15, divisions: 14,
-                                    label: state.targetFps.toString(),
-                                    onChanged: (value) => _cubit.setTargetFps(value.round()),
-                                  ),
-                                ),
                                 Text('${state.targetFps}'),
+                                const SizedBox(width: 20),
+                                const Text('JPEG Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                Text('$jpegQuality'),
+                                const SizedBox(width: 20),
+                                const Text('Adaptive Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                Text('$_adaptiveQuality', style: TextStyle(
+                                  color: _networkSlow ? Colors.orange : Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                )),
+                                if (_networkSlow)
+                                  const Text(' (Slow)', style: TextStyle(color: Colors.orange, fontSize: 12)),
                               ],
                             ),
                             
-                                                         // JPEG Quality slider
-                             Row(
-                               children: [
-                                 const Text('JPEG Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                 Expanded(
-                                   child: Slider(
-                                     value: jpegQuality.toDouble(),
-                                     min: 50, max: 90, divisions: 40,
-                                     label: jpegQuality.toString(),
-                                     onChanged: (value) => setState(() => jpegQuality = value.round()),
-                                   ),
-                                 ),
-                                 Text('$jpegQuality'),
-                               ],
-                             ),
-                             
-                             // Adaptive quality indicator
-                             Row(
-                               children: [
-                                 const Text('Adaptive Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                 Text('$_adaptiveQuality', style: TextStyle(
-                                   color: _networkSlow ? Colors.orange : Colors.green,
-                                   fontWeight: FontWeight.bold,
-                                 )),
-                                 if (_networkSlow)
-                                   const Text(' (Network Slow)', style: TextStyle(color: Colors.orange, fontSize: 12)),
-                               ],
-                             ),
+                            const SizedBox(height: 16),
+                            
+                            // Sent Frames Container
+                            const Text('Sent Frames:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 120,
+                              child: _sentFrames.isEmpty
+                                  ? const Center(child: Text('No frames sent yet'))
+                                  : ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: _sentFrames.length,
+                                      itemBuilder: (context, index) {
+                                        final frame = _sentFrames[index];
+                                        return Container(
+                                          width: 120,
+                                          margin: const EdgeInsets.only(right: 8),
+                                          child: GestureDetector(
+                                            onTap: () => _showImageModal(frame, null),
+                                            child: Column(
+                                              children: [
+                                                Expanded(
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                      border: Border.all(color: Colors.grey),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: ClipRRect(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      child: Image.memory(
+                                                        frame.jpegData,
+                                                        fit: BoxFit.cover,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Frame ${frame.id}',
+                                                  style: const TextStyle(fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
                             
                             const SizedBox(height: 16),
                             
