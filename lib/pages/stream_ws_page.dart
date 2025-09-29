@@ -78,7 +78,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
   bool _networkSlow = false;
   
   // Server configuration
-  String serverUrl = 'wss://bae61170b508.ngrok-free.app/ws/guidance';
+  String serverUrl = 'wss://7499c157e3ea.ngrok-free.app/ws/guidance';
   
   // Frame tracking
   int _frameCounter = 0;
@@ -416,20 +416,19 @@ class _StreamWsPageState extends State<StreamWsPage> {
       final type = m['type'];
 
       if (type == 'guidance') {
-        // Parse NOOR guidance response with class-based system
-        final direction = m['class'] as String? ?? 'class_7'; // Default to no document
-        final magnitude = (m['magnitude'] ?? 0.0).toDouble();
+        // Parse NOOR guidance response with semantic class system
+        // Server now responds every 2 seconds with the most frequent class from the last 2 seconds
+        final direction = m['class'] as String? ?? 'no_document'; // Default to no document
         final coverage = (m['coverage'] ?? 0.0).toDouble();
         final confidence = (m['conf'] ?? 0.0).toDouble();
         final ready = m['ready'] as bool? ?? false;
         final skewDeg = (m['skew_deg'] ?? 0.0).toDouble();
 
-        debugPrint('Received guidance: $direction, magnitude: $magnitude, coverage: $coverage, confidence: $confidence, ready: $ready');
+        debugPrint('Received guidance (2s interval): $direction, coverage: $coverage, confidence: $confidence, ready: $ready');
 
-        // Update guidance state
+        // Update guidance state with the most frequent class from the last 2 seconds
         _cubit.updateGuidance(
           direction: direction,
-          magnitude: magnitude,
           coverage: coverage,
           confidence: confidence,
           ready: ready,
@@ -536,26 +535,24 @@ class _StreamWsPageState extends State<StreamWsPage> {
         break;
       }
     }
-  }
+    }
 
   // Helper methods for guidance display
   IconData _getDirectionIcon(String? direction) {
     switch (direction) {
-      case 'class_0':
+      case 'top_left':
         return Icons.north_west;  // top-left corner
-      case 'class_1':
+      case 'top_right':
         return Icons.north_east; // top-right corner
-      case 'class_2':
+      case 'bottom_left':
         return Icons.south_west; // bottom-left corner
-      case 'class_3':
+      case 'bottom_right':
         return Icons.south_east; // bottom-right corner
-      case 'class_4':
+      case 'paper_face_only':
         return Icons.center_focus_strong; // partial framing
-      case 'class_5':
+      case 'perfect':
         return Icons.check_circle; // perfect framing
-      case 'class_6':
-        return Icons.keyboard_arrow_up; // center-edges
-      case 'class_7':
+      case 'no_document':
         return Icons.help_outline; // no document detected
       default:
         return Icons.center_focus_strong;
@@ -564,14 +561,35 @@ class _StreamWsPageState extends State<StreamWsPage> {
 
   Color _getDirectionColor(String? direction) {
     switch (direction) {
-      case 'class_5':
+      case 'perfect':
         return Colors.green; // perfect framing
-      case 'class_4':
+      case 'paper_face_only':
         return Colors.blue; // partial framing
-      case 'class_7':
+      case 'no_document':
         return Colors.red; // no document
       default:
         return Colors.orange; // corner cases
+    }
+  }
+
+  String _getClassDescription(String? direction) {
+    switch (direction) {
+      case 'top_left':
+        return 'Move camera up and left';
+      case 'top_right':
+        return 'Move camera up and right';
+      case 'bottom_right':
+        return 'Move camera down and right';
+      case 'bottom_left':
+        return 'Move camera down and left';
+      case 'paper_face_only':
+        return 'Show more of the document';
+      case 'perfect':
+        return 'Perfect framing!';
+      case 'no_document':
+        return 'No document detected';
+      default:
+        return 'Unknown guidance';
     }
   }
   
@@ -692,7 +710,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
                             // Class ID overlay
                             Center(
                               child: Text(
-                                state.guidanceDirection ?? 'class_7',
+                                state.guidanceDirection ?? 'no_document',
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -718,85 +736,6 @@ class _StreamWsPageState extends State<StreamWsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Guidance display
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[50],
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.blue[200]!),
-                              ),
-                              child: Column(
-                                children: [
-                                  // Class ID text
-                                  Text(
-                                    'Class: ${state.guidanceDirection ?? 'class_7'}',
-                                    style: TextStyle(
-                                      fontSize: 18, 
-                                      fontWeight: FontWeight.bold,
-                                      color: _getDirectionColor(state.guidanceDirection),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Metrics row
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                    children: [
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Confidence',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            '${(state.confidence * 100).toStringAsFixed(1)}%',
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Coverage',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            '${(state.coverage * 100).toStringAsFixed(1)}%',
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Magnitude',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            state.guidanceMagnitude.toStringAsFixed(2),
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Ready indicator
-                                  if (state.readyForCapture)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: const Text(
-                                        'READY FOR CAPTURE!',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
                             
                             const SizedBox(height: 8),
                             
@@ -808,14 +747,24 @@ class _StreamWsPageState extends State<StreamWsPage> {
                                ],
                              ),
                              
+                             // Server response timing info
+                             Row(
+                               children: [
+                                 const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                 const Text('Guidance every 2s | ', style: TextStyle(fontSize: 12)),
+                                 Text('Class: ${state.guidanceDirection ?? 'no_document'}', 
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                               ],
+                             ),
+                             
                             // Server status
-                            if (state is IntervalUpdateState)
-                              Row(
-                                children: [
-                                  const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                             if (state is IntervalUpdateState)
+                               Row(
+                                 children: [
+                                   const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                   Text('FPS: ${state.fps.toStringAsFixed(1)} | Frames: ${state.frames}'),
-                                ],
-                              ),
+                                 ],
+                               ),
                             
                             const SizedBox(height: 12),
                             
@@ -825,18 +774,18 @@ class _StreamWsPageState extends State<StreamWsPage> {
                                 const Text('Target FPS: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                 Text('${state.targetFps}'),
                                 const SizedBox(width: 20),
-                                const Text('JPEG Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Text('$jpegQuality'),
+                                 const Text('JPEG Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                 Text('$jpegQuality'),
                                 const SizedBox(width: 20),
-                                const Text('Adaptive Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Text('$_adaptiveQuality', style: TextStyle(
-                                  color: _networkSlow ? Colors.orange : Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                )),
-                                if (_networkSlow)
+                                 const Text('Adaptive Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                 Text('$_adaptiveQuality', style: TextStyle(
+                                   color: _networkSlow ? Colors.orange : Colors.green,
+                                   fontWeight: FontWeight.bold,
+                                 )),
+                                 if (_networkSlow)
                                   const Text(' (Slow)', style: TextStyle(color: Colors.orange, fontSize: 12)),
-                              ],
-                            ),
+                               ],
+                             ),
                             
                             const SizedBox(height: 16),
                             

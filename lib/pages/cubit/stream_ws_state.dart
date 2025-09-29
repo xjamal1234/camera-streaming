@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 abstract class StreamWsState {
   final int targetFps;
   final String? guidanceDirection;
-  final double guidanceMagnitude;
   final double coverage;
   final double confidence;
   final bool readyForCapture;
@@ -11,7 +10,6 @@ abstract class StreamWsState {
   const StreamWsState({
     this.targetFps = 20,
     this.guidanceDirection,
-    this.guidanceMagnitude = 0.0,
     this.coverage = 0.0,
     this.confidence = 0.0,
     this.readyForCapture = false,
@@ -22,7 +20,6 @@ class InitialState extends StreamWsState {
   const InitialState({
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
@@ -33,7 +30,6 @@ class ConnectingState extends StreamWsState {
   const ConnectingState({
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
@@ -44,7 +40,6 @@ class StreamingState extends StreamWsState {
   const StreamingState({
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
@@ -66,7 +61,6 @@ class FrameUpdateState extends StreamWsState {
     this.boxes,
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
@@ -86,7 +80,6 @@ class IntervalUpdateState extends StreamWsState {
     required this.regions,
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
@@ -100,7 +93,6 @@ class FailureState extends StreamWsState {
     required this.message,
     super.targetFps,
     super.guidanceDirection,
-    super.guidanceMagnitude,
     super.coverage,
     super.confidence,
     super.readyForCapture,
