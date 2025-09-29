@@ -591,7 +591,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
       default:
         return 'Unknown guidance';
     }
-  }
+    }
   
   void _showImageModal(SentFrame? sentFrame, ReceivedResult? receivedResult) {
     showDialog(
@@ -748,19 +748,19 @@ class _StreamWsPageState extends State<StreamWsPage> {
                              ),
                              
                              // Server response timing info
-                             Row(
-                               children: [
-                                 const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                               Row(
+                                 children: [
+                                   const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                  const Text('Guidance every 2s | ', style: TextStyle(fontSize: 12)),
                                  Text('Class: ${state.guidanceDirection ?? 'no_document'}', 
                                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                               ],
-                             ),
-                             
+                                 ],
+                               ),
+                            
                             // Server status
                              if (state is IntervalUpdateState)
-                               Row(
-                                 children: [
+                            Row(
+                              children: [
                                    const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                   Text('FPS: ${state.fps.toStringAsFixed(1)} | Frames: ${state.frames}'),
                                  ],
@@ -769,8 +769,8 @@ class _StreamWsPageState extends State<StreamWsPage> {
                             const SizedBox(height: 12),
                             
                             // Fixed settings display
-                            Row(
-                              children: [
+                             Row(
+                               children: [
                                 const Text('Target FPS: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                 Text('${state.targetFps}'),
                                 const SizedBox(width: 20),
