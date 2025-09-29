@@ -8,7 +8,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
     emit(InitialState(
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -19,7 +18,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
     emit(ConnectingState(
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -30,7 +28,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
     emit(StreamingState(
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -42,7 +39,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       message: message,
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -55,7 +51,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(InitialState(
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -64,7 +59,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(ConnectingState(
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -73,7 +67,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(StreamingState(
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -87,7 +80,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         boxes: currentState.boxes,
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -100,7 +92,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         regions: currentState.regions,
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -110,7 +101,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         message: currentState.message,
         targetFps: fps,
         guidanceDirection: currentState.guidanceDirection,
-        guidanceMagnitude: currentState.guidanceMagnitude,
         coverage: currentState.coverage,
         confidence: currentState.confidence,
         readyForCapture: currentState.readyForCapture,
@@ -133,7 +123,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       boxes: boxes,
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -153,7 +142,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       regions: regions,
       targetFps: state.targetFps,
       guidanceDirection: state.guidanceDirection,
-      guidanceMagnitude: state.guidanceMagnitude,
       coverage: state.coverage,
       confidence: state.confidence,
       readyForCapture: state.readyForCapture,
@@ -162,7 +150,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
 
   void updateGuidance({
     required String direction,
-    required double magnitude,
     required double coverage,
     required double confidence,
     required bool ready,
@@ -172,7 +159,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(InitialState(
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,
@@ -181,7 +167,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(ConnectingState(
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,
@@ -190,7 +175,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
       emit(StreamingState(
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,
@@ -204,7 +188,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         boxes: currentState.boxes,
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,
@@ -217,7 +200,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         regions: currentState.regions,
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,
@@ -227,7 +209,6 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         message: currentState.message,
         targetFps: currentState.targetFps,
         guidanceDirection: direction,
-        guidanceMagnitude: magnitude,
         coverage: coverage,
         confidence: confidence,
         readyForCapture: ready,

@@ -64,6 +64,9 @@ class YuvToJpegFallback {
       }
     }
 
-    return Uint8List.fromList(imglib.encodeJpg(img, quality: quality));
+    // Rotate the image 90 degrees clockwise to fix orientation
+    final rotatedImg = imglib.copyRotate(img, angle: 90);
+
+    return Uint8List.fromList(imglib.encodeJpg(rotatedImg, quality: quality));
   }
 }

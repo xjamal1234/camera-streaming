@@ -73,12 +73,12 @@ class _StreamWsPageState extends State<StreamWsPage> {
   double _currentFps = 0.0;
   
   // Adaptive quality for network conditions
-  int jpegQuality = 75;
-  int _adaptiveQuality = 75;
+  int jpegQuality = 80;
+  int _adaptiveQuality = 80;
   bool _networkSlow = false;
   
   // Server configuration
-  String serverUrl = 'ws://10.7.0.250:8080/ws/guidance';
+  String serverUrl = 'wss://7499c157e3ea.ngrok-free.app/ws/guidance';
   
   // Frame tracking
   int _frameCounter = 0;
@@ -416,20 +416,19 @@ class _StreamWsPageState extends State<StreamWsPage> {
       final type = m['type'];
 
       if (type == 'guidance') {
-        // Parse NOOR guidance response
-        final direction = m['dir'] as String? ?? 'steady';
-        final magnitude = (m['magnitude'] ?? 0.0).toDouble();
+        // Parse NOOR guidance response with semantic class system
+        // Server now responds every 2 seconds with the most frequent class from the last 2 seconds
+        final direction = m['class'] as String? ?? 'no_document'; // Default to no document
         final coverage = (m['coverage'] ?? 0.0).toDouble();
         final confidence = (m['conf'] ?? 0.0).toDouble();
         final ready = m['ready'] as bool? ?? false;
         final skewDeg = (m['skew_deg'] ?? 0.0).toDouble();
 
-        debugPrint('Received guidance: $direction, magnitude: $magnitude, coverage: $coverage, confidence: $confidence, ready: $ready');
+        debugPrint('Received guidance (2s interval): $direction, coverage: $coverage, confidence: $confidence, ready: $ready');
 
-        // Update guidance state
+        // Update guidance state with the most frequent class from the last 2 seconds
         _cubit.updateGuidance(
           direction: direction,
-          magnitude: magnitude,
           coverage: coverage,
           confidence: confidence,
           ready: ready,
@@ -536,30 +535,63 @@ class _StreamWsPageState extends State<StreamWsPage> {
         break;
       }
     }
-  }
+    }
 
   // Helper methods for guidance display
   IconData _getDirectionIcon(String? direction) {
     switch (direction) {
-      case 'up':
-        return Icons.keyboard_arrow_up;
-      case 'down':
-        return Icons.keyboard_arrow_down;
-      case 'left':
-        return Icons.keyboard_arrow_left;
-      case 'right':
-        return Icons.keyboard_arrow_right;
-      case 'steady':
-        return Icons.center_focus_strong;
+      case 'top_left':
+        return Icons.north_west;  // top-left corner
+      case 'top_right':
+        return Icons.north_east; // top-right corner
+      case 'bottom_left':
+        return Icons.south_west; // bottom-left corner
+      case 'bottom_right':
+        return Icons.south_east; // bottom-right corner
+      case 'paper_face_only':
+        return Icons.center_focus_strong; // partial framing
+      case 'perfect':
+        return Icons.check_circle; // perfect framing
+      case 'no_document':
+        return Icons.help_outline; // no document detected
       default:
-        return Icons.center_focus_strong; // fallback
+        return Icons.center_focus_strong;
     }
   }
 
   Color _getDirectionColor(String? direction) {
-    if (direction == 'steady') return Colors.green;
-    return Colors.orange; // for up/down/left/right
+    switch (direction) {
+      case 'perfect':
+        return Colors.green; // perfect framing
+      case 'paper_face_only':
+        return Colors.blue; // partial framing
+      case 'no_document':
+        return Colors.red; // no document
+      default:
+        return Colors.orange; // corner cases
+    }
   }
+
+  String _getClassDescription(String? direction) {
+    switch (direction) {
+      case 'top_left':
+        return 'Move camera up and left';
+      case 'top_right':
+        return 'Move camera up and right';
+      case 'bottom_right':
+        return 'Move camera down and right';
+      case 'bottom_left':
+        return 'Move camera down and left';
+      case 'paper_face_only':
+        return 'Show more of the document';
+      case 'perfect':
+        return 'Perfect framing!';
+      case 'no_document':
+        return 'No document detected';
+      default:
+        return 'Unknown guidance';
+    }
+    }
   
   void _showImageModal(SentFrame? sentFrame, ReceivedResult? receivedResult) {
     showDialog(
@@ -657,9 +689,44 @@ class _StreamWsPageState extends State<StreamWsPage> {
             body: _cam?.value.isInitialized == true
                 ? Column(
                     children: [
-                      // Live camera preview
+                      // Live camera preview with direction overlay
                       Expanded(
-                        child: _cam != null ? CameraPreview(_cam!) : const SizedBox(),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Camera preview - ensure it fills the entire space
+                            _cam != null 
+                              ? SizedBox.expand(
+                                  child: FittedBox(
+                                    fit: BoxFit.cover,
+                                    child: SizedBox(
+                                      width: _cam!.value.previewSize?.height ?? 0,
+                                      height: _cam!.value.previewSize?.width ?? 0,
+                                      child: CameraPreview(_cam!),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(),
+                            // Class ID overlay
+                            Center(
+                              child: Text(
+                                state.guidanceDirection ?? 'no_document',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getDirectionColor(state.guidanceDirection),
+                                  shadows: [
+                                    Shadow(
+                                      offset: Offset(1, 1),
+                                      blurRadius: 3,
+                                      color: Colors.black.withOpacity(0.8),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       
                       // Stats panel
@@ -669,88 +736,6 @@ class _StreamWsPageState extends State<StreamWsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Guidance display
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[50],
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.blue[200]!),
-                              ),
-                              child: Column(
-                                children: [
-                                  // Direction arrow
-                                  Icon(
-                                    _getDirectionIcon(state.guidanceDirection),
-                                    size: 48,
-                                    color: _getDirectionColor(state.guidanceDirection),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Direction text
-                                  Text(
-                                    'Direction: ${state.guidanceDirection?.toUpperCase() ?? 'STEADY'}',
-                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Metrics row
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                    children: [
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Confidence',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            '${(state.confidence * 100).toStringAsFixed(1)}%',
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Coverage',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            '${(state.coverage * 100).toStringAsFixed(1)}%',
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                      Column(
-                                        children: [
-                                          Text(
-                                            'Magnitude',
-                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                          ),
-                                          Text(
-                                            state.guidanceMagnitude.toStringAsFixed(2),
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Ready indicator
-                                  if (state.readyForCapture)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: const Text(
-                                        'READY FOR CAPTURE!',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
                             
                             const SizedBox(height: 8),
                             
@@ -762,61 +747,94 @@ class _StreamWsPageState extends State<StreamWsPage> {
                                ],
                              ),
                              
+                             // Server response timing info
+                               Row(
+                                 children: [
+                                   const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                 const Text('Guidance every 2s | ', style: TextStyle(fontSize: 12)),
+                                 Text('Class: ${state.guidanceDirection ?? 'no_document'}', 
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                 ],
+                               ),
+                            
                             // Server status
-                            if (state is IntervalUpdateState)
-                              Row(
-                                children: [
-                                  const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                             if (state is IntervalUpdateState)
+                            Row(
+                              children: [
+                                   const Text('Server: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                   Text('FPS: ${state.fps.toStringAsFixed(1)} | Frames: ${state.frames}'),
-                                ],
-                              ),
+                                 ],
+                               ),
                             
                             const SizedBox(height: 12),
                             
-                            // Target FPS slider
-                            Row(
-                              children: [
+                            // Fixed settings display
+                             Row(
+                               children: [
                                 const Text('Target FPS: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Expanded(
-                                  child: Slider(
-                                    value: state.targetFps.toDouble(),
-                                    min: 1, max: 15, divisions: 14,
-                                    label: state.targetFps.toString(),
-                                    onChanged: (value) => _cubit.setTargetFps(value.round()),
-                                  ),
-                                ),
                                 Text('${state.targetFps}'),
-                              ],
-                            ),
-                            
-                                                         // JPEG Quality slider
-                             Row(
-                               children: [
+                                const SizedBox(width: 20),
                                  const Text('JPEG Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                                 Expanded(
-                                   child: Slider(
-                                     value: jpegQuality.toDouble(),
-                                     min: 50, max: 90, divisions: 40,
-                                     label: jpegQuality.toString(),
-                                     onChanged: (value) => setState(() => jpegQuality = value.round()),
-                                   ),
-                                 ),
                                  Text('$jpegQuality'),
-                               ],
-                             ),
-                             
-                             // Adaptive quality indicator
-                             Row(
-                               children: [
+                                const SizedBox(width: 20),
                                  const Text('Adaptive Quality: ', style: TextStyle(fontWeight: FontWeight.bold)),
                                  Text('$_adaptiveQuality', style: TextStyle(
                                    color: _networkSlow ? Colors.orange : Colors.green,
                                    fontWeight: FontWeight.bold,
                                  )),
                                  if (_networkSlow)
-                                   const Text(' (Network Slow)', style: TextStyle(color: Colors.orange, fontSize: 12)),
+                                  const Text(' (Slow)', style: TextStyle(color: Colors.orange, fontSize: 12)),
                                ],
                              ),
+                            
+                            const SizedBox(height: 16),
+                            
+                            // Sent Frames Container
+                            const Text('Sent Frames:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 120,
+                              child: _sentFrames.isEmpty
+                                  ? const Center(child: Text('No frames sent yet'))
+                                  : ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: _sentFrames.length,
+                                      itemBuilder: (context, index) {
+                                        final frame = _sentFrames[index];
+                                        return Container(
+                                          width: 120,
+                                          margin: const EdgeInsets.only(right: 8),
+                                          child: GestureDetector(
+                                            onTap: () => _showImageModal(frame, null),
+                                            child: Column(
+                                              children: [
+                                                Expanded(
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                      border: Border.all(color: Colors.grey),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: ClipRRect(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      child: Image.memory(
+                                                        frame.jpegData,
+                                                        fit: BoxFit.cover,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Frame ${frame.id}',
+                                                  style: const TextStyle(fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
                             
                             const SizedBox(height: 16),
                             
