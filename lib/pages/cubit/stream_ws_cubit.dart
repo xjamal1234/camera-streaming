@@ -204,6 +204,16 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         confidence: confidence,
         readyForCapture: ready,
       ));
+    } else if (currentState is LoadingState) {
+      emit(LoadingState(
+        sessionId: currentState.sessionId,
+        savedPath: currentState.savedPath,
+        targetFps: currentState.targetFps,
+        guidanceDirection: direction,
+        coverage: coverage,
+        confidence: confidence,
+        readyForCapture: ready,
+      ));
     } else if (currentState is FailureState) {
       emit(FailureState(
         message: currentState.message,
@@ -214,5 +224,30 @@ class StreamWsCubit extends Cubit<StreamWsState> {
         readyForCapture: ready,
       ));
     }
+  }
+
+  void setLoading({
+    required String sessionId,
+    required String savedPath,
+  }) {
+    emit(LoadingState(
+      sessionId: sessionId,
+      savedPath: savedPath,
+      targetFps: state.targetFps,
+      guidanceDirection: state.guidanceDirection,
+      coverage: state.coverage,
+      confidence: state.confidence,
+      readyForCapture: state.readyForCapture,
+    ));
+  }
+
+  void cancelLoading() {
+    emit(InitialState(
+      targetFps: state.targetFps,
+      guidanceDirection: state.guidanceDirection,
+      coverage: state.coverage,
+      confidence: state.confidence,
+      readyForCapture: state.readyForCapture,
+    ));
   }
 }
