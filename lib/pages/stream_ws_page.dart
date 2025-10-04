@@ -89,6 +89,17 @@ class _StreamWsPageState extends State<StreamWsPage> {
   final Queue<CameraImage> _frameQueue = Queue();
   bool _isProcessingQueue = false;
   
+  // Frame sending control
+  bool _allowFrameSend = true;
+  bool _finalizedReceived = false;
+  
+  // Loading timeout handling
+  Timer? _loadingTimeout;
+  bool _showTimeoutError = false;
+  String? _loadingErrorMessage;
+  bool _isReconnectingBanner = false;
+  int _reconnectAttempts = 0;
+  
   // Network performance tracking
   int _lastNetworkCheck = 0;
   int _networkLatency = 0;
@@ -107,6 +118,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
     _wsSubscription?.cancel();
     _ch?.sink.close();
     _reconnectTimer?.cancel();
+    _loadingTimeout?.cancel();
     _frameQueue.clear();
     _cubit.close();
     super.dispose();
@@ -136,6 +148,12 @@ class _StreamWsPageState extends State<StreamWsPage> {
   }
 
   void _onFrame(CameraImage image) {
+    // Check if frame sending is allowed (not finalized)
+    if (!_allowFrameSend) {
+      _framesDropped++;
+      return;
+    }
+    
     // Performance optimization: Frame rate control with frame dropping
     final now = DateTime.now().millisecondsSinceEpoch;
     
@@ -436,6 +454,72 @@ class _StreamWsPageState extends State<StreamWsPage> {
 
         if (mounted) setState(() {});
         
+      } else if (type == 'final_frame_captured') {
+        // Handle final frame captured - stop streaming and show loading
+        final sessionId = m['sessionId'] as String? ?? 'unknown';
+        final savedPath = m['saved_path'];
+        
+        debugPrint('onFinalFrameCaptured sessionId=$sessionId action=stop_stream keep_ws=true');
+        
+        // Prevent duplicate processing
+        if (!_finalizedReceived) {
+          _finalizedReceived = true;
+          _allowFrameSend = false;
+          
+          // Clear frame queue
+          _frameQueue.clear();
+          debugPrint('Frame queue cleared');
+          
+          // Stop camera stream
+          if (_cam?.value.isStreamingImages == true) {
+            _cam?.stopImageStream();
+            debugPrint('Camera stream stopped');
+          }
+          
+          // Transition to loading state
+          _cubit.setLoading(
+            sessionId: sessionId,
+            savedPath: (savedPath is String) ? savedPath : '',
+          );
+
+          // If server failed to provide saved_path
+          if (savedPath == null) {
+            _loadingErrorMessage = 'Failed to save the final frame on server.';
+        } else {
+            _loadingErrorMessage = null;
+          }
+          
+          // Start 30s timeout
+          _loadingTimeout = Timer(const Duration(seconds: 30), () {
+            if (mounted && _cubit.state is LoadingState) {
+              _showTimeoutError = true;
+              setState(() {});
+            }
+          });
+          
+        if (mounted) setState(() {});
+        }
+        
+      } else if (type == 'processing_done') {
+        // Exit loading on success
+        final sessionId = m['sessionId'];
+        debugPrint('processing_done received for sessionId=$sessionId');
+        _loadingTimeout?.cancel();
+        _showTimeoutError = false;
+        _loadingErrorMessage = null;
+        // TODO: navigate or update UI for next phase (e.g., OCR)
+        // For now, return to Idle to complete the flow
+        _cancelLoading();
+        
+      } else if (type == 'hb') {
+        // Handle heartbeat - no UI changes needed
+        debugPrint('Received heartbeat');
+        
+      } else if (type == 'processing_start' || type == 'processing_progress' || 
+                 type == 'stage_change' || type == 'processing_done') {
+        // Future compatibility - placeholder for processing messages
+        debugPrint('Received processing message: $type');
+        
       } else {
         debugPrint('Unknown message type: $type');
       }
@@ -456,8 +540,14 @@ class _StreamWsPageState extends State<StreamWsPage> {
     
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
       _isReconnecting = false;
-      if (mounted && _cubit.state is StreamingState) {
-        debugPrint('Attempting to reconnect...');
+      if (!mounted) return;
+      final isLoading = _cubit.state is LoadingState;
+      final shouldReconnect = (_cubit.state is StreamingState) || isLoading;
+      if (shouldReconnect) {
+        _isReconnectingBanner = true;
+        _reconnectAttempts++;
+        setState(() {});
+        debugPrint('Attempting to reconnect... (attempt: $_reconnectAttempts)');
         _reconnectWebSocket();
       }
     });
@@ -489,6 +579,10 @@ class _StreamWsPageState extends State<StreamWsPage> {
             _scheduleReconnect();
           },
         );
+        // Clear reconnect banner when connected
+        _isReconnectingBanner = false;
+        _reconnectAttempts = 0;
+        if (mounted) setState(() {});
       }
     } catch (e) {
       debugPrint('Reconnection failed: $e');
@@ -535,7 +629,45 @@ class _StreamWsPageState extends State<StreamWsPage> {
         break;
       }
     }
+  }
+
+  void _cancelLoading() {
+    debugPrint('User cancelled loading - resetting to initial state');
+    
+    // Cancel timeout
+    _loadingTimeout?.cancel();
+    _loadingTimeout = null;
+    _showTimeoutError = false;
+    
+    // Close WebSocket
+    _wsSubscription?.cancel();
+    _ch?.sink.close();
+    _ch = null;
+    
+    // Stop camera
+    if (_cam?.value.isStreamingImages == true) {
+      _cam?.stopImageStream();
     }
+    
+    // Reset flags
+    _allowFrameSend = true;
+    _finalizedReceived = false;
+    
+    // Clear queues
+    _frameQueue.clear();
+    
+    // Reset to initial state
+    _cubit.cancelLoading();
+    
+    if (mounted) setState(() {});
+  }
+
+  void _retryAfterTimeout() {
+    debugPrint('User retrying after timeout - resetting to initial state');
+    
+    // Same as cancel but with retry intent
+    _cancelLoading();
+  }
 
   // Helper methods for guidance display
   IconData _getDirectionIcon(String? direction) {
@@ -725,6 +857,94 @@ class _StreamWsPageState extends State<StreamWsPage> {
                                 ),
                               ),
                             ),
+                            // Loading overlay for final_frame_captured
+                            if (state is LoadingState)
+                              Container(
+                                color: Colors.black.withOpacity(0.8),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (_isReconnectingBanner)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: Text(
+                                            'Reconnecting… (attempt: $_reconnectAttempts)',
+                                            style: const TextStyle(color: Colors.orange, fontSize: 12),
+                                          ),
+                                        ),
+                                      const CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 3,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      const Text(
+                                        'Processing...',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        'Session: ${(state as LoadingState).sessionId}',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 30),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: _cancelLoading,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          if (_showTimeoutError) ...[
+                                            const SizedBox(width: 20),
+                                            ElevatedButton(
+                                              onPressed: _retryAfterTimeout,
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.orange,
+                                                foregroundColor: Colors.white,
+                                              ),
+                                              child: const Text('Retry'),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      if (_loadingErrorMessage != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 10),
+                                          child: Text(
+                                            _loadingErrorMessage!,
+                                            style: const TextStyle(
+                                              color: Colors.redAccent,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      if (_showTimeoutError)
+                                        const Padding(
+                                          padding: EdgeInsets.only(top: 10),
+                                          child: Text(
+                                            'Processing is taking longer than expected',
+                                            style: TextStyle(
+                                              color: Colors.orange,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),

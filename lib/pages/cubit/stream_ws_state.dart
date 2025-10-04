@@ -86,6 +86,21 @@ class IntervalUpdateState extends StreamWsState {
   });
 }
 
+class LoadingState extends StreamWsState {
+  final String sessionId;
+  final String savedPath;
+  
+  const LoadingState({
+    required this.sessionId,
+    required this.savedPath,
+    super.targetFps,
+    super.guidanceDirection,
+    super.coverage,
+    super.confidence,
+    super.readyForCapture,
+  });
+}
+
 class FailureState extends StreamWsState {
   final String message;
   
