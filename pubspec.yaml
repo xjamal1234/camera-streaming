@@ -39,13 +39,16 @@ dependencies:
   camera: ^0.11.0+2
   
   # WebSocket communication
-  web_socket_channel: ^2.4.0
+  web_socket_channel: ^3.0.1
   
   # State management
-  flutter_bloc: ^8.1.4
+  flutter_bloc: ^8.1.6
   
   # Image processing for JPEG conversion
-  image: ^4.1.7
+  image: ^4.3.0
+  
+  # Local storage for session persistence
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to
