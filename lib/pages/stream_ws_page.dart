@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image/image.dart' as img;
-import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
+// OLD WebSocket imports removed - now using WsService
 
 import 'cubit/stream_ws_cubit.dart';
 import 'cubit/stream_ws_state.dart';
 import 'utils/yuv_to_jpeg_fallback.dart';
+import '../services/ws_service.dart';
+import '../services/ws_service_adapter.dart';
+import '../features/chat/screens/chat_screen.dart';
 
 // Data classes for frame tracking
 class SentFrame {
@@ -54,11 +56,15 @@ class StreamWsPage extends StatefulWidget {
 
 class _StreamWsPageState extends State<StreamWsPage> {
   CameraController? _cam;
-  StreamSubscription? _wsSubscription;
-  WebSocketChannel? _ch;
+  // OLD WebSocket subscription removed - now using WsService
+  // OLD WebSocket channel removed - now using WsService
   
   // Create cubit at state level
   late final StreamWsCubit _cubit;
+  
+  // Shared WebSocket service for chat integration
+  final WsService _wsService = WsService();
+  StreamSubscription? _wsServiceSubscription;
 
   // Frame processing with performance optimizations
   CameraImage? _latest;
@@ -78,7 +84,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
   bool _networkSlow = false;
   
   // Server configuration
-  String serverUrl = 'wss://7499c157e3ea.ngrok-free.app/ws/guidance';
+  String serverUrl = 'wss://c10d731adcf6.ngrok-free.app/ws/guidance';
   
   // Frame tracking
   int _frameCounter = 0;
@@ -100,6 +106,10 @@ class _StreamWsPageState extends State<StreamWsPage> {
   bool _isReconnectingBanner = false;
   int _reconnectAttempts = 0;
   
+  // Perfect frame detection timeout
+  Timer? _perfectFrameTimeout;
+  DateTime? _lastPerfectFrameTime;
+  
   // Network performance tracking
   int _lastNetworkCheck = 0;
   int _networkLatency = 0;
@@ -110,15 +120,21 @@ class _StreamWsPageState extends State<StreamWsPage> {
     super.initState();
     _cubit = StreamWsCubit();
     _initializeCamera();
+    
+    // Listen to WS service for processing_completed
+    _wsServiceSubscription = _wsService.onMessage.listen(_handleWsServiceMessage);
   }
 
   @override
   void dispose() {
     _cam?.dispose();
-    _wsSubscription?.cancel();
-    _ch?.sink.close();
+    // Old WebSocket subscription removed - WsService handles this
+    // WsService cleanup handled in dispose()
     _reconnectTimer?.cancel();
     _loadingTimeout?.cancel();
+    _perfectFrameTimeout?.cancel();
+    _wsServiceSubscription?.cancel();
+    _wsService.dispose();
     _frameQueue.clear();
     _cubit.close();
     super.dispose();
@@ -166,7 +182,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
     }
     
     // Check if WebSocket is connected
-    if (_ch == null) {
+    if (!_wsService.isConnected) {
       _framesDropped++;
       return;
     }
@@ -198,19 +214,19 @@ class _StreamWsPageState extends State<StreamWsPage> {
     
     _isProcessingQueue = true;
     
-    while (_frameQueue.isNotEmpty && _ch != null) {
+    while (_frameQueue.isNotEmpty && _wsService.isConnected) {
       final image = _frameQueue.removeFirst();
       final startTime = DateTime.now().millisecondsSinceEpoch;
       
       try {
         // Use adaptive quality based on network conditions
         final quality = _networkSlow ? _adaptiveQuality - 10 : _adaptiveQuality;
-        final clampedQuality = quality.clamp(50, 90);
+        final clampedQuality = quality.clamp(80, 95);
         
         // Convert YUV to JPEG with performance tracking
         final jpegBytes = await _convertYuvToJpeg(image, clampedQuality);
         
-        if (jpegBytes.isNotEmpty && _ch != null) {
+        if (jpegBytes.isNotEmpty && _wsService.isConnected) {
           _frameCounter++;
           final sentFrame = SentFrame(
             id: _frameCounter,
@@ -233,10 +249,10 @@ class _StreamWsPageState extends State<StreamWsPage> {
               'jpeg_quality': clampedQuality,
             };
             
-            _ch?.sink.add(jsonEncode(frameMeta));
+            _wsService.sendJson(frameMeta);
             
             // Then send the JPEG data
-            _ch?.sink.add(jpegBytes);
+            _wsService.sendBinary(jpegBytes);
             final sendEnd = DateTime.now().millisecondsSinceEpoch;
             _networkLatency = sendEnd - sendStart;
             
@@ -348,38 +364,11 @@ class _StreamWsPageState extends State<StreamWsPage> {
     try {
       debugPrint('Connecting to WebSocket...');
       
-      // Test network connectivity first
-      try {
-        _ch = IOWebSocketChannel.connect(
-          Uri.parse(serverUrl),
-        );
-        debugPrint('WebSocket connection established');
-      } catch (e) {
-        debugPrint('WebSocket connection failed: $e');
-        _cubit.setFailure('Cannot connect to server at ${serverUrl.replaceFirst('ws://', '')}. Please check if the server is running and accessible.');
-        return;
-      }
+      // Connect WsService for chat integration
+      await _wsService.connectWs(url: serverUrl);
       
-      debugPrint('WebSocket connected, setting up listener...');
-      
-                           if (_ch != null) {
-                _wsSubscription = _ch!.stream.listen(
-                  _handleWebSocketMessage,
-                  onError: (error) {
-                    debugPrint('WebSocket error: $error');
-                    // Don't stop streaming, just schedule reconnection
-                    _scheduleReconnect();
-                  },
-                  onDone: () {
-                    debugPrint('WebSocket connection closed');
-                    // Don't stop streaming, just schedule reconnection
-                    _scheduleReconnect();
-                  },
-                );
-              } else {
-                _cubit.setFailure('Failed to establish WebSocket connection');
-                return;
-              }
+      // WebSocket connection is now handled by WsService
+      debugPrint('WebSocket connection established via WsService');
       
              debugPrint('Starting camera image stream...');
        try {
@@ -396,9 +385,9 @@ class _StreamWsPageState extends State<StreamWsPage> {
          debugPrint('Failed to start camera stream: $e');
          _cubit.setFailure('Failed to start camera stream: $e');
          // Clean up WebSocket connection
-         _wsSubscription?.cancel();
-         _ch?.sink.close();
-         _ch = null;
+         // Old WebSocket subscription removed - WsService handles this
+         // WsService cleanup handled in dispose()
+         // WsService cleanup handled in dispose()
          return;
        }
       
@@ -418,16 +407,205 @@ class _StreamWsPageState extends State<StreamWsPage> {
       debugPrint('Error stopping camera stream: $e');
     }
     
-    _wsSubscription?.cancel();
-    _ch?.sink.close();
-    _ch = null;
+    // Old WebSocket subscription removed - WsService handles this
+    // WsService cleanup handled in dispose()
+    // WsService cleanup handled in dispose()
     
     _cubit.setInitial();
   }
 
 
 
-  void _handleWebSocketMessage(dynamic data) {
+  /// Handle messages from WsService (for chat integration)
+  void _handleWsServiceMessage(Map<String, dynamic> message) {
+    final type = message['type'];
+    final data = message['data'] as Map<String, dynamic>?;
+    
+    debugPrint('[StreamWsPage] WsService message: $type');
+    debugPrint('[StreamWsPage] Full message: $message');
+    
+    if (type == 'guidance') {
+      // Handle guidance messages
+      final direction = message['class'] as String? ?? 'no_document';
+      final coverage = (message['coverage'] ?? 0.0).toDouble();
+      final confidence = (message['conf'] ?? 0.0).toDouble();
+      final ready = message['ready'] as bool? ?? false;
+      final skewDeg = (message['skew_deg'] ?? 0.0).toDouble();
+
+      debugPrint('Received guidance (2s interval): $direction, coverage: $coverage, confidence: $confidence, ready: $ready');
+
+      // Update guidance state
+      _cubit.updateGuidance(
+        direction: direction,
+        coverage: coverage,
+        confidence: confidence,
+        ready: ready,
+      );
+
+      // Handle perfect frame detection
+      if (direction == 'perfect' && ready == true) {
+        debugPrint('PERFECT FRAME DETECTED: direction=$direction, ready=$ready, coverage=$coverage, confidence=$confidence');
+        debugPrint('Waiting for server to send final_frame_captured message...');
+        
+        // Cancel any existing timeout
+        _perfectFrameTimeout?.cancel();
+        
+        // Start a 10-second timeout for perfect frame
+        _lastPerfectFrameTime = DateTime.now();
+        _perfectFrameTimeout = Timer(const Duration(seconds: 10), () {
+          if (mounted && !_finalizedReceived) {
+            debugPrint('Perfect frame timeout: Server did not send final_frame_captured within 10 seconds');
+            debugPrint('Triggering loading state manually...');
+            
+            // Manually trigger loading state
+            _finalizedReceived = true;
+            _allowFrameSend = false;
+            _frameQueue.clear();
+            
+            if (_cam?.value.isStreamingImages == true) {
+              _cam?.stopImageStream();
+              debugPrint('Camera stream stopped (timeout)');
+            }
+            
+            _cubit.setLoading(
+              sessionId: 'timeout_${DateTime.now().millisecondsSinceEpoch}',
+              savedPath: 'timeout_triggered',
+            );
+            
+            _loadingErrorMessage = 'Server timeout: Perfect frame detected but no final_frame_captured received';
+            
+            // Start 30s timeout for loading
+            _loadingTimeout = Timer(const Duration(seconds: 30), () {
+              if (mounted && _cubit.state is LoadingState) {
+                _showTimeoutError = true;
+                setState(() {});
+              }
+            });
+            
+            if (mounted) setState(() {});
+          }
+        });
+      }
+
+      if (mounted) setState(() {});
+      
+    } else if (type == 'final_frame_captured') {
+      // Handle final frame captured - stop streaming and show loading
+      final sessionId = message['sessionId'] as String? ?? 'unknown';
+      final savedPath = message['saved_path'];
+      
+      debugPrint('onFinalFrameCaptured sessionId=$sessionId action=stop_stream keep_ws=true');
+      
+      // Prevent duplicate processing
+      if (!_finalizedReceived) {
+        _finalizedReceived = true;
+        _allowFrameSend = false;
+        
+        // Clear frame queue
+        _frameQueue.clear();
+        debugPrint('Frame queue cleared');
+        
+        // Stop camera stream
+        if (_cam?.value.isStreamingImages == true) {
+          _cam?.stopImageStream();
+          debugPrint('Camera stream stopped');
+        }
+        
+        // Transition to loading state
+        _cubit.setLoading(
+          sessionId: sessionId,
+          savedPath: (savedPath is String) ? savedPath : '',
+        );
+
+        // If server failed to provide saved_path
+        if (savedPath == null || savedPath.isEmpty) {
+          _loadingErrorMessage = 'Server failed to provide saved_path';
+        }
+
+        // Start 30s timeout for loading
+        _loadingTimeout = Timer(const Duration(seconds: 30), () {
+          if (mounted && _cubit.state is LoadingState) {
+            _showTimeoutError = true;
+            setState(() {});
+          }
+        });
+        
+        if (mounted) setState(() {});
+      }
+      
+    } else if (type == 'hb') {
+      // Handle heartbeat
+      debugPrint('Received heartbeat');
+      
+    } else if (type == 'error') {
+      // Handle server error messages
+      final errorMessage = message['message'] as String? ?? 'Unknown server error';
+      final errorCode = message['code'] as String? ?? 'unknown';
+      debugPrint('Server error: $errorCode - $errorMessage');
+      
+    } else if (type == 'processing_started') {
+      // Handle processing started
+      final docId = data?['docId'] as String?;
+      debugPrint('Processing started for docId: $docId');
+      
+    } else if (type == 'processing_completed' && data != null) {
+      final gptReady = data['gpt_ready'] as bool? ?? false;
+      final docId = data['docId'] as String?;
+      
+      debugPrint('[StreamWsPage] ===== PROCESSING_COMPLETED RECEIVED =====');
+      debugPrint('[StreamWsPage] gptReady: $gptReady, docId: $docId');
+      debugPrint('[StreamWsPage] Data: $data');
+      debugPrint('[StreamWsPage] Current state: ${_cubit.state.runtimeType}');
+      debugPrint('[StreamWsPage] Is mounted: $mounted');
+      debugPrint('[StreamWsPage] WebSocket connected: ${_wsService.isConnected}');
+      debugPrint('[StreamWsPage] ===== END PROCESSING_COMPLETED =====');
+      
+      if (gptReady && docId != null && docId.isNotEmpty) {
+        debugPrint('[StreamWsPage] GPT ready! Navigating to chat with docId: $docId');
+        
+        // Only navigate if we're in loading state
+        if (_cubit.state is LoadingState) {
+          // Cancel loading timeout
+          _loadingTimeout?.cancel();
+          _perfectFrameTimeout?.cancel();
+          
+          // Keep WebSocket connection alive for chat
+          _wsService.keepAlive();
+          debugPrint('[StreamWsPage] ===== CHAT TRANSITION =====');
+          debugPrint('[StreamWsPage] WebSocket connection kept alive for chat');
+          debugPrint('[StreamWsPage] DocId for chat: $docId');
+          debugPrint('[StreamWsPage] WebSocket status: ${_wsService.connectionInfo}');
+          
+          // Create adapter and set docId
+          final adapter = WsServiceAdapter(_wsService);
+          adapter.setDocId(docId);
+          
+          debugPrint('[StreamWsPage] Navigating to chat screen...');
+          // Navigate to chat screen
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                docId: docId,
+                webSocketManager: adapter,
+              ),
+            ),
+          ).then((_) {
+            // When returning from chat, go back to initial state
+            _cancelLoading();
+          });
+        } else {
+          debugPrint('[StreamWsPage] Not in loading state, cannot navigate to chat');
+        }
+      } else if (!gptReady) {
+        debugPrint('[StreamWsPage] GPT not ready yet, staying on loading...');
+      }
+    } else {
+      debugPrint('Unknown message type: $type, full message: $message');
+    }
+  }
+
+  // OLD METHOD REMOVED - guidance handling moved to _handleWsServiceMessage
+  void _handleWebSocketMessage_OLD(dynamic data) {
     try {
       // Handle JSON messages (NOOR API guidance responses)
       final m = jsonDecode(data.toString()) as Map<String, dynamic>;
@@ -451,6 +629,51 @@ class _StreamWsPageState extends State<StreamWsPage> {
           confidence: confidence,
           ready: ready,
         );
+
+        // Log when we receive perfect guidance with ready=true
+        if (direction == 'perfect' && ready == true) {
+          debugPrint('PERFECT FRAME DETECTED: direction=$direction, ready=$ready, coverage=$coverage, confidence=$confidence');
+          debugPrint('Waiting for server to send final_frame_captured message...');
+          
+          // Cancel any existing timeout
+          _perfectFrameTimeout?.cancel();
+          
+          // Start a 10-second timeout for perfect frame
+          _lastPerfectFrameTime = DateTime.now();
+          _perfectFrameTimeout = Timer(const Duration(seconds: 10), () {
+            if (mounted && !_finalizedReceived) {
+              debugPrint('Perfect frame timeout: Server did not send final_frame_captured within 10 seconds');
+              debugPrint('Triggering loading state manually...');
+              
+              // Manually trigger loading state
+              _finalizedReceived = true;
+              _allowFrameSend = false;
+              _frameQueue.clear();
+              
+              if (_cam?.value.isStreamingImages == true) {
+                _cam?.stopImageStream();
+                debugPrint('Camera stream stopped (timeout)');
+              }
+              
+              _cubit.setLoading(
+                sessionId: 'timeout_${DateTime.now().millisecondsSinceEpoch}',
+                savedPath: 'timeout_triggered',
+              );
+              
+              _loadingErrorMessage = 'Server timeout: Perfect frame detected but no final_frame_captured received';
+              
+              // Start 30s timeout for loading
+              _loadingTimeout = Timer(const Duration(seconds: 30), () {
+                if (mounted && _cubit.state is LoadingState) {
+                  _showTimeoutError = true;
+                  setState(() {});
+                }
+              });
+              
+        if (mounted) setState(() {});
+            }
+          });
+        }
 
         if (mounted) setState(() {});
         
@@ -515,13 +738,21 @@ class _StreamWsPageState extends State<StreamWsPage> {
         // Handle heartbeat - no UI changes needed
         debugPrint('Received heartbeat');
         
+      } else if (type == 'error') {
+        // Handle server error messages
+        final errorMessage = m['message'] as String? ?? 'Unknown server error';
+        final errorCode = m['code'] as String? ?? 'unknown';
+        debugPrint('Server error: $errorCode - $errorMessage');
+        
+        // Don't stop streaming for errors, just log them
+        
       } else if (type == 'processing_start' || type == 'processing_progress' || 
                  type == 'stage_change' || type == 'processing_done') {
         // Future compatibility - placeholder for processing messages
         debugPrint('Received processing message: $type');
         
       } else {
-        debugPrint('Unknown message type: $type');
+        debugPrint('Unknown message type: $type, full message: $m');
       }
     } catch (e) {
       debugPrint('WebSocket message parse error: $e');
@@ -548,47 +779,12 @@ class _StreamWsPageState extends State<StreamWsPage> {
         _reconnectAttempts++;
         setState(() {});
         debugPrint('Attempting to reconnect... (attempt: $_reconnectAttempts)');
-        _reconnectWebSocket();
+        // WsService handles reconnection automatically
       }
     });
   }
   
-  Future<void> _reconnectWebSocket() async {
-    try {
-      debugPrint('Reconnecting to WebSocket...');
-      
-      // Close existing connection
-      _wsSubscription?.cancel();
-      _ch?.sink.close();
-      _ch = null;
-      
-      // Try to reconnect
-      _ch = IOWebSocketChannel.connect(Uri.parse(serverUrl));
-      debugPrint('Reconnection successful');
-      
-      // Set up listener again
-      if (_ch != null) {
-        _wsSubscription = _ch!.stream.listen(
-          _handleWebSocketMessage,
-          onError: (error) {
-            debugPrint('WebSocket reconnection error: $error');
-            _scheduleReconnect();
-          },
-          onDone: () {
-            debugPrint('WebSocket reconnection closed');
-            _scheduleReconnect();
-          },
-        );
-        // Clear reconnect banner when connected
-        _isReconnectingBanner = false;
-        _reconnectAttempts = 0;
-        if (mounted) setState(() {});
-      }
-    } catch (e) {
-      debugPrint('Reconnection failed: $e');
-      _scheduleReconnect();
-    }
-  }
+  // OLD RECONNECTION METHOD REMOVED - WsService handles reconnection automatically
   
   void _handleProcessedImage(Uint8List imageData) {
     // Find the most recent sent frame that doesn't have a result yet
@@ -634,15 +830,17 @@ class _StreamWsPageState extends State<StreamWsPage> {
   void _cancelLoading() {
     debugPrint('User cancelled loading - resetting to initial state');
     
-    // Cancel timeout
+    // Cancel timeouts
     _loadingTimeout?.cancel();
     _loadingTimeout = null;
+    _perfectFrameTimeout?.cancel();
+    _perfectFrameTimeout = null;
     _showTimeoutError = false;
     
     // Close WebSocket
-    _wsSubscription?.cancel();
-    _ch?.sink.close();
-    _ch = null;
+    // Old WebSocket subscription removed - WsService handles this
+    // WsService cleanup handled in dispose()
+    // WsService cleanup handled in dispose()
     
     // Stop camera
     if (_cam?.value.isStreamingImages == true) {
@@ -652,6 +850,7 @@ class _StreamWsPageState extends State<StreamWsPage> {
     // Reset flags
     _allowFrameSend = true;
     _finalizedReceived = false;
+    _lastPerfectFrameTime = null;
     
     // Clear queues
     _frameQueue.clear();
